@@ -1,148 +1,223 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import Table
+from reportlab.lib.pagesizes import letter
+from io import BytesIO
 
-st.set_page_config(page_title="Legal Medical Record Intelligence", layout="wide")
+# -----------------------------
+# DARK ENTERPRISE THEME
+# -----------------------------
+st.set_page_config(layout="wide")
 
-# --------------------------
-# Sidebar Navigation
-# --------------------------
-st.sidebar.title("Legal Record Intelligence")
+st.markdown("""
+<style>
+body {
+    background-color: #111827;
+    color: #F3F4F6;
+}
+.stApp {
+    background-color: #111827;
+}
+section[data-testid="stSidebar"] {
+    background-color: #1F2937;
+}
+div.stButton > button {
+    background-color: #3B82F6;
+    color: white;
+    border-radius: 8px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-menu = st.sidebar.radio(
-    "Navigation",
-    [
-        "Dashboard",
-        "Upload Records",
-        "Templates",
-        "Labs & Trends",
-        "Duplicates",
-        "Administration",
-        "Tools & Customization"
-    ]
-)
+# -----------------------------
+# SESSION STATE INIT
+# -----------------------------
+if "flags" not in st.session_state:
+    st.session_state.flags = []
 
-# --------------------------
-# Dashboard
-# --------------------------
-if menu == "Dashboard":
-    st.title("Medical Record Intelligence Dashboard")
+if "export_mode" not in st.session_state:
+    st.session_state.export_mode = "Include Flag Summary"
 
-    col1, col2, col3 = st.columns(3)
+# -----------------------------
+# SIDEBAR NAVIGATION
+# -----------------------------
+st.sidebar.title("Medical-Legal Platform")
+page = st.sidebar.radio("Navigate", [
+    "Dashboard",
+    "Labs & Trends",
+    "Flagged Items",
+    "Tools & Customization"
+])
 
-    col1.metric("Records Processed", "1,248")
-    col2.metric("Flagged Entries", "17")
-    col3.metric("Duplicate Pages", "9")
+# -----------------------------
+# DASHBOARD
+# -----------------------------
+if page == "Dashboard":
+    st.title("Medical-Legal Record Analysis Platform")
 
-    st.subheader("Chronology Preview")
+    st.markdown("### Case Overview")
+    st.info("Upload records and analyze labs under the Labs & Trends tab.")
 
-    df = pd.DataFrame({
-        "Date": pd.date_range(start="2025-01-01", periods=10),
-        "Event": ["ED Visit", "Lab Result", "PT Session", "MD Note", "OT Eval",
-                  "Lab Result", "Hospitalization", "PT Session", "Discharge", "Follow-up"]
-    })
+    st.markdown("---")
 
-    st.dataframe(df, use_container_width=True)
+    st.warning("""
+    DISCLAIMER:
+    This software is intended solely as a support tool to assist medical-legal review.
+    It does not replace professional medical judgment or legal review.
+    Automated extraction and analysis may contain inaccuracies.
+    All outputs must be independently reviewed by qualified personnel.
+    """)
 
-# --------------------------
-# Upload Records
-# --------------------------
-elif menu == "Upload Records":
-    st.title("Upload Medical Records")
+# -----------------------------
+# LABS & TRENDS
+# -----------------------------
+elif page == "Labs & Trends":
+    st.title("Lab Trends")
 
-    uploaded_files = st.file_uploader(
-        "Upload Medical Records (PDF or Image)",
-        type=["pdf", "png", "jpg"],
-        accept_multiple_files=True
-    )
+    category = st.selectbox("Lab Category", ["CBC", "CMP", "Inflammatory"])
 
-    if uploaded_files:
-        st.success(f"{len(uploaded_files)} file(s) uploaded successfully.")
-        st.info("Processing engine would analyze dates, disciplines, and chronology here.")
-
-# --------------------------
-# Templates
-# --------------------------
-elif menu == "Templates":
-    st.title("Template Configuration")
-
-    tier = st.radio("Subscription Tier", ["Basic (Generic Template)", "Premium (Past Approved Case Model)"])
-
-    if tier == "Basic (Generic Template)":
-        st.file_uploader("Upload Generic One-Page Template", type=["pdf", "docx"])
-
-    else:
-        st.file_uploader("Upload Previously Approved Case Model", type=["pdf", "docx"])
-
-    st.info("System will align extracted content to template structure.")
-
-# --------------------------
-# Labs & Trends
-# --------------------------
-elif menu == "Labs & Trends":
-    st.title("Lab & Vital Trends")
-
-    dates = pd.date_range(start="2025-01-01", periods=10)
-    lab_values = np.random.randint(80, 140, size=10)
-
-    df = pd.DataFrame({"Date": dates, "Glucose": lab_values})
-
-    st.line_chart(df.set_index("Date"))
-
-# --------------------------
-# Duplicates
-# --------------------------
-elif menu == "Duplicates":
-    st.title("Duplicate Page Management")
-
-    st.warning("Duplicates are preserved for review. BATES numbering remains unaffected.")
-
-    duplicates = pd.DataFrame({
-        "Page": ["BATES_0012", "BATES_0045", "BATES_0102"],
-        "Reason": ["Exact match", "Near match", "Scanned duplicate"]
-    })
-
-    st.dataframe(duplicates, use_container_width=True)
-
-# --------------------------
-# Administration
-# --------------------------
-elif menu == "Administration":
-    st.title("User Role Management")
-
-    role = st.selectbox("Select Role", ["Nurse", "Attorney", "Partner", "Paralegal"])
-
-    permissions = {
-        "Nurse": "View + Comment",
-        "Attorney": "View + Edit",
-        "Partner": "Full Access",
-        "Paralegal": "View Only"
+    lab_options = {
+        "CBC": ["WBC", "Hemoglobin", "Platelets"],
+        "CMP": ["Sodium", "Potassium", "Creatinine"],
+        "Inflammatory": ["CRP", "ESR"]
     }
 
-    st.info(f"{role} permissions: {permissions[role]}")
+    selected_lab = st.selectbox("Select Lab Test", lab_options[category])
 
-    st.subheader("Audit Log")
-    st.write("• 02/18/2026 - PT section edited")
-    st.write("• 02/17/2026 - Duplicate moved to bottom")
-    st.write("• 02/15/2026 - Template updated")
+    start_date = st.date_input("Start Date")
+    end_date = st.date_input("End Date")
 
-# --------------------------
-# Tools & Customization
-# --------------------------
-elif menu == "Tools & Customization":
-    st.title("Customization & Rule Builder")
+    # Simulated Data
+    dates = pd.date_range(start="2023-01-01", periods=10)
+    values = [5, 6, 12, 14, 7, 8, 9, 15, 10, 11]
 
-    remove_dupes = st.checkbox("Automatically Remove Exact Duplicates")
-    normalize_dates = st.checkbox("Normalize All Date Formats")
-    move_dupes = st.checkbox("Move Duplicates to End of Chronology")
-    separate_folder = st.checkbox("Move Duplicates to Separate Folder")
+    df = pd.DataFrame({"Date": dates, "Value": values})
 
-    st.subheader("Firm Rule Builder")
+    # Reference Range Simulation
+    ref_low = 4
+    ref_high = 10
 
-    rule_name = st.text_input("Rule Name")
-    rule_condition = st.text_input("If Document Contains...")
-    rule_action = st.text_input("Then Move To Section...")
+    if selected_lab == "CRP":
+        ref_low = None
+        ref_high = None
 
-    if st.button("Save Rule"):
-        st.success("Rule saved successfully.")
+    if ref_low is None:
+        ref_low = 0
+        ref_high = 5
+        st.warning(
+            "Range not found or analyzed accurately by software. "
+            "Average standard medical range applied: 0-5*"
+        )
+
+        st.session_state.flags.append({
+            "Item": selected_lab,
+            "Reason": "Reference range auto-applied",
+            "Status": "Pending",
+            "Comment": ""
+        })
+
+    fig, ax = plt.subplots()
+
+    ax.plot(df["Date"], df["Value"], marker="o")
+
+    ax.axhspan(ref_low, ref_high, alpha=0.2)
+
+    for i in range(len(df)):
+        if df["Value"][i] > ref_high:
+            ax.plot(df["Date"][i], df["Value"][i], "ro")
+        elif df["Value"][i] < ref_low:
+            ax.plot(df["Date"][i], df["Value"][i], "bo")
+        else:
+            ax.plot(df["Date"][i], df["Value"][i], "go")
+
+    ax.set_title(selected_lab + " Trend")
+    st.pyplot(fig)
+
+    if st.button("Add Significant Event"):
+        st.success("Event marker functionality placeholder")
+
+# -----------------------------
+# FLAGGED ITEMS
+# -----------------------------
+elif page == "Flagged Items":
+    st.title("Flagged Items for Review")
+
+    if not st.session_state.flags:
+        st.success("No flagged items.")
+    else:
+        for i, flag in enumerate(st.session_state.flags):
+            st.markdown(f"### {flag['Item']}")
+            st.write("Reason:", flag["Reason"])
+
+            status = st.selectbox(
+                "Status",
+                ["Pending", "Completed", "Dismissed", "Other"],
+                key=f"status_{i}"
+            )
+
+            comment = st.text_input("Comment", key=f"comment_{i}")
+
+            complete = st.checkbox("Mark Complete", key=f"complete_{i}")
+
+            if complete:
+                st.session_state.flags[i]["Status"] = "Completed"
+
+# -----------------------------
+# TOOLS & CUSTOMIZATION
+# -----------------------------
+elif page == "Tools & Customization":
+    st.title("Export & Settings")
+
+    export_mode = st.selectbox(
+        "Export Behavior",
+        [
+            "Block export if unresolved flags",
+            "Include Flag Summary",
+            "Allow export regardless"
+        ]
+    )
+
+    st.session_state.export_mode = export_mode
+
+    if st.button("Export Chronology as PDF"):
+
+        unresolved = [
+            f for f in st.session_state.flags
+            if f["Status"] != "Completed"
+        ]
+
+        if export_mode == "Block export if unresolved flags" and unresolved:
+            st.error("Resolve all flags before exporting.")
+        else:
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter)
+            elements = []
+            styles = getSampleStyleSheet()
+
+            elements.append(Paragraph("Chronology Report", styles["Heading1"]))
+            elements.append(Spacer(1, 0.25 * inch))
+
+            if export_mode == "Include Flag Summary" and st.session_state.flags:
+                elements.append(Paragraph("Flag Summary", styles["Heading2"]))
+                elements.append(Spacer(1, 0.2 * inch))
+                for flag in st.session_state.flags:
+                    elements.append(
+                        Paragraph(
+                            f"{flag['Item']} - {flag['Reason']} - {flag['Status']}",
+                            styles["Normal"]
+                        )
+                    )
+
+            doc.build(elements)
+            st.success("Export ready.")
+            st.download_button(
+                "Download PDF",
+                buffer.getvalue(),
+                "chronology.pdf"
+            )
