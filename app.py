@@ -2,31 +2,18 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from reportlab.platypus import Table
-from reportlab.lib.pagesizes import letter
-from io import BytesIO
+import uuid
 
 # -----------------------------
-# DARK ENTERPRISE THEME
+# PAGE CONFIG + DARK THEME
 # -----------------------------
 st.set_page_config(layout="wide")
 
 st.markdown("""
 <style>
-body {
-    background-color: #111827;
-    color: #F3F4F6;
-}
-.stApp {
-    background-color: #111827;
-}
-section[data-testid="stSidebar"] {
-    background-color: #1F2937;
-}
+body { background-color: #111827; color: #F3F4F6; }
+.stApp { background-color: #111827; }
+section[data-testid="stSidebar"] { background-color: #1F2937; }
 div.stButton > button {
     background-color: #3B82F6;
     color: white;
@@ -38,186 +25,221 @@ div.stButton > button {
 # -----------------------------
 # SESSION STATE INIT
 # -----------------------------
-if "flags" not in st.session_state:
-    st.session_state.flags = []
+if "cases" not in st.session_state:
+    st.session_state.cases = {}
 
-if "export_mode" not in st.session_state:
-    st.session_state.export_mode = "Include Flag Summary"
+if "selected_case" not in st.session_state:
+    st.session_state.selected_case = None
 
 # -----------------------------
-# SIDEBAR NAVIGATION
+# CASE STRUCTURE
 # -----------------------------
-st.sidebar.title("Medical-Legal Platform")
-page = st.sidebar.radio("Navigate", [
-    "Dashboard",
-    "Labs & Trends",
-    "Flagged Items",
-    "Tools & Customization"
-])
+def create_case(name):
+    st.session_state.cases[name] = {
+        "status": "Active",
+        "records": [],
+        "templates": [],
+        "labs": [],
+        "flags": [],
+        "duplicates": [],
+        "blanks": [],
+        "custom_rules": []
+    }
+
+# -----------------------------
+# SIDEBAR CASE MANAGER
+# -----------------------------
+st.sidebar.title("CASE MANAGER")
+
+active_cases = [c for c in st.session_state.cases if st.session_state.cases[c]["status"] == "Active"]
+past_cases = [c for c in st.session_state.cases if st.session_state.cases[c]["status"] == "Past"]
+
+st.sidebar.subheader("Active Cases")
+for case in active_cases:
+    if st.sidebar.button(f"🟢 {case}", key=f"active_{case}"):
+        st.session_state.selected_case = case
+
+st.sidebar.subheader("Past Cases")
+for case in past_cases:
+    if st.sidebar.button(f"🔵 {case}", key=f"past_{case}"):
+        st.session_state.selected_case = case
+
+new_case_name = st.sidebar.text_input("New Case Name")
+if st.sidebar.button("Create Case"):
+    if new_case_name:
+        create_case(new_case_name)
+        st.session_state.selected_case = new_case_name
+
+st.sidebar.markdown("---")
+
+# -----------------------------
+# NAVIGATION
+# -----------------------------
+if st.session_state.selected_case:
+    page = st.sidebar.radio("Navigate", [
+        "Dashboard",
+        "Upload Records",
+        "Templates",
+        "Labs & Trends",
+        "Duplicates / Blank Pages",
+        "Review & Flags",
+        "Administration",
+        "Tools & Customization"
+    ])
+else:
+    st.title("Create or Select a Case to Begin")
+    st.stop()
+
+case_data = st.session_state.cases[st.session_state.selected_case]
 
 # -----------------------------
 # DASHBOARD
 # -----------------------------
 if page == "Dashboard":
-    st.title("Medical-Legal Record Analysis Platform")
+    st.title(f"Case: {st.session_state.selected_case}")
 
-    st.markdown("### Case Overview")
-    st.info("Upload records and analyze labs under the Labs & Trends tab.")
+    col1, col2 = st.columns(2)
+
+    if case_data["status"] == "Active":
+        if col1.button("Move to Past"):
+            case_data["status"] = "Past"
+    else:
+        if col1.button("Move to Active"):
+            case_data["status"] = "Active"
 
     st.markdown("---")
 
     st.warning("""
     DISCLAIMER:
-    This software is intended solely as a support tool to assist medical-legal review.
-    It does not replace professional medical judgment or legal review.
-    Automated extraction and analysis may contain inaccuracies.
-    All outputs must be independently reviewed by qualified personnel.
+    This tool assists medical-legal review and does not replace professional judgment.
+    All outputs must be reviewed by qualified personnel before legal use.
     """)
+
+# -----------------------------
+# UPLOAD RECORDS
+# -----------------------------
+elif page == "Upload Records":
+    st.title("Upload Records")
+
+    uploaded_file = st.file_uploader("Upload PDF or Document")
+
+    if uploaded_file:
+        case_data["records"].append(uploaded_file.name)
+        st.success(f"{uploaded_file.name} added to case.")
+
+    st.write("Uploaded Records:", case_data["records"])
+
+# -----------------------------
+# TEMPLATES
+# -----------------------------
+elif page == "Templates":
+    st.title("Templates")
+
+    template_file = st.file_uploader("Upload Template Structure")
+
+    if template_file:
+        case_data["templates"].append(template_file.name)
+        st.success("Template uploaded.")
+
+    st.write("Saved Templates:", case_data["templates"])
 
 # -----------------------------
 # LABS & TRENDS
 # -----------------------------
 elif page == "Labs & Trends":
-    st.title("Lab Trends")
+    st.title("Labs & Trends")
 
-    category = st.selectbox("Lab Category", ["CBC", "CMP", "Inflammatory"])
-
-    lab_options = {
-        "CBC": ["WBC", "Hemoglobin", "Platelets"],
-        "CMP": ["Sodium", "Potassium", "Creatinine"],
-        "Inflammatory": ["CRP", "ESR"]
+    labs = {
+        "CBC": ["WBC","RBC","HGB","HCT","Platelets","MCV","MCH","RDW"],
+        "CMP": ["Sodium","Potassium","Chloride","CO2","BUN","Creatinine","Glucose","AST","ALT","ALP","Bilirubin"],
+        "Inflammatory": ["CRP","ESR","Procalcitonin"]
     }
 
-    selected_lab = st.selectbox("Select Lab Test", lab_options[category])
+    category = st.selectbox("Category", list(labs.keys()))
+    selected_lab = st.selectbox("Lab Test", labs[category])
 
-    start_date = st.date_input("Start Date")
-    end_date = st.date_input("End Date")
-
-    # Simulated Data
-    dates = pd.date_range(start="2023-01-01", periods=10)
-    values = [5, 6, 12, 14, 7, 8, 9, 15, 10, 11]
+    # Simulated data
+    dates = pd.date_range(start="2023-01-01", periods=12)
+    values = [5,7,6,12,8,9,11,10,13,7,6,8]
 
     df = pd.DataFrame({"Date": dates, "Value": values})
 
-    # Reference Range Simulation
-    ref_low = 4
-    ref_high = 10
-
-    if selected_lab == "CRP":
-        ref_low = None
-        ref_high = None
-
-    if ref_low is None:
-        ref_low = 0
-        ref_high = 5
-        st.warning(
-            "Range not found or analyzed accurately by software. "
-            "Average standard medical range applied: 0-5*"
-        )
-
-        st.session_state.flags.append({
-            "Item": selected_lab,
-            "Reason": "Reference range auto-applied",
-            "Status": "Pending",
-            "Comment": ""
-        })
-
-    fig, ax = plt.subplots()
-
+    fig, ax = plt.subplots(figsize=(14,6))
     ax.plot(df["Date"], df["Value"], marker="o")
 
-    ax.axhspan(ref_low, ref_high, alpha=0.2)
-
-    for i in range(len(df)):
-        if df["Value"][i] > ref_high:
-            ax.plot(df["Date"][i], df["Value"][i], "ro")
-        elif df["Value"][i] < ref_low:
-            ax.plot(df["Date"][i], df["Value"][i], "bo")
-        else:
-            ax.plot(df["Date"][i], df["Value"][i], "go")
-
     ax.set_title(selected_lab + " Trend")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
     st.pyplot(fig)
 
-    if st.button("Add Significant Event"):
-        st.success("Event marker functionality placeholder")
+# -----------------------------
+# DUPLICATES / BLANKS
+# -----------------------------
+elif page == "Duplicates / Blank Pages":
+    st.title("Duplicates & Blank Pages")
+
+    if st.button("Simulate Duplicate Detection"):
+        case_data["duplicates"].append("BATES_0045")
+        st.success("Duplicate detected.")
+
+    st.write("Duplicates:", case_data["duplicates"])
+
+    if st.button("Simulate Blank Page Detection"):
+        case_data["blanks"].append("BATES_0102")
+        st.success("Blank page detected.")
+
+    st.write("Blank Pages:", case_data["blanks"])
 
 # -----------------------------
-# FLAGGED ITEMS
+# REVIEW & FLAGS
 # -----------------------------
-elif page == "Flagged Items":
-    st.title("Flagged Items for Review")
+elif page == "Review & Flags":
+    st.title("Flagged Items")
 
-    if not st.session_state.flags:
-        st.success("No flagged items.")
-    else:
-        for i, flag in enumerate(st.session_state.flags):
-            st.markdown(f"### {flag['Item']}")
-            st.write("Reason:", flag["Reason"])
+    if st.button("Add Test Flag"):
+        case_data["flags"].append({
+            "Item": "WBC",
+            "Reason": "High value",
+            "Status": "Pending"
+        })
 
-            status = st.selectbox(
-                "Status",
-                ["Pending", "Completed", "Dismissed", "Other"],
-                key=f"status_{i}"
-            )
+    for i, flag in enumerate(case_data["flags"]):
+        st.write(flag["Item"], "-", flag["Reason"])
+        status = st.selectbox(
+            "Status",
+            ["Pending","Completed","Dismissed"],
+            key=f"flag_{i}"
+        )
+        case_data["flags"][i]["Status"] = status
 
-            comment = st.text_input("Comment", key=f"comment_{i}")
+# -----------------------------
+# ADMINISTRATION
+# -----------------------------
+elif page == "Administration":
+    st.title("Administration")
 
-            complete = st.checkbox("Mark Complete", key=f"complete_{i}")
+    roles = ["Nurse","Attorney","Partner","Paralegal"]
+    selected_role = st.selectbox("User Role", roles)
 
-            if complete:
-                st.session_state.flags[i]["Status"] = "Completed"
+    st.write(f"Permissions for {selected_role} would be configured here.")
 
 # -----------------------------
 # TOOLS & CUSTOMIZATION
 # -----------------------------
 elif page == "Tools & Customization":
-    st.title("Export & Settings")
+    st.title("Customization")
 
-    export_mode = st.selectbox(
-        "Export Behavior",
-        [
-            "Block export if unresolved flags",
-            "Include Flag Summary",
-            "Allow export regardless"
-        ]
+    export_policy = st.selectbox(
+        "Export Policy",
+        ["Block if flags pending","Include flag summary","Allow regardless"]
     )
 
-    st.session_state.export_mode = export_mode
+    custom_rule = st.text_area("Add Firm Custom Rule")
 
-    if st.button("Export Chronology as PDF"):
+    if st.button("Save Rule"):
+        case_data["custom_rules"].append(custom_rule)
 
-        unresolved = [
-            f for f in st.session_state.flags
-            if f["Status"] != "Completed"
-        ]
-
-        if export_mode == "Block export if unresolved flags" and unresolved:
-            st.error("Resolve all flags before exporting.")
-        else:
-            buffer = BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=letter)
-            elements = []
-            styles = getSampleStyleSheet()
-
-            elements.append(Paragraph("Chronology Report", styles["Heading1"]))
-            elements.append(Spacer(1, 0.25 * inch))
-
-            if export_mode == "Include Flag Summary" and st.session_state.flags:
-                elements.append(Paragraph("Flag Summary", styles["Heading2"]))
-                elements.append(Spacer(1, 0.2 * inch))
-                for flag in st.session_state.flags:
-                    elements.append(
-                        Paragraph(
-                            f"{flag['Item']} - {flag['Reason']} - {flag['Status']}",
-                            styles["Normal"]
-                        )
-                    )
-
-            doc.build(elements)
-            st.success("Export ready.")
-            st.download_button(
-                "Download PDF",
-                buffer.getvalue(),
-                "chronology.pdf"
-            )
+    st.write("Saved Rules:", case_data["custom_rules"])
