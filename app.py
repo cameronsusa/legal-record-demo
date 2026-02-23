@@ -1,232 +1,223 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import datetime
-import uuid
+from datetime import datetime
+import io
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Med-Legal Case Organizer v1.8", layout="wide")
 
-# -------------------------------
-# SESSION INITIALIZATION
-# -------------------------------
+# --------------------------
+# THEME
+# --------------------------
+st.markdown("""
+<style>
+.stApp { background-color: #0e1117; color: #ffffff; }
+h1,h2,h3 { color: #ffffff; }
+.block-container { padding-top: 2rem; }
+.sidebar .sidebar-content { background-color: #111827; }
+</style>
+""", unsafe_allow_html=True)
 
+st.title("Med-Legal Case Organizer - Version 1.8")
+
+# --------------------------
+# SESSION STATE
+# --------------------------
 if "cases" not in st.session_state:
     st.session_state.cases = {}
 
-if "active_case" not in st.session_state:
-    st.session_state.active_case = None
+if "current_case" not in st.session_state:
+    st.session_state.current_case = None
 
-# -------------------------------
-# DEFAULT TEMPLATE SECTIONS
-# -------------------------------
+# --------------------------
+# CASE MANAGEMENT
+# --------------------------
+st.sidebar.header("Case Management")
 
-DEFAULT_TEMPLATE = [
-    "Chief Complaint",
-    "History of Present Illness",
-    "Past Medical History",
-    "Medications",
-    "Allergies",
-    "Labs",
-    "Imaging",
-    "Procedures",
-    "Hospital Course",
-    "Disposition"
-]
+case_status = st.sidebar.radio("View Cases", ["New Case", "Active Cases", "Past Cases"])
 
-# -------------------------------
-# LAB PANEL DEFINITIONS
-# -------------------------------
+if case_status == "New Case":
+    case_name = st.sidebar.text_input("Create New Case")
+    if st.sidebar.button("Create Case"):
+        st.session_state.cases[case_name] = {
+            "status": "Active",
+            "template": [],
+            "records": None,
+            "labs": {},
+            "notes": [],
+            "duplicates": []
+        }
+        st.session_state.current_case = case_name
 
-LAB_PANELS = {
-    "CBC": {
-        "WBC": (4.0, 11.0),
-        "RBC": (4.2, 5.9),
-        "Hemoglobin": (12, 17.5),
-        "Hematocrit": (36, 52),
-        "Platelets": (150, 400),
-        "MCV": (80, 100),
-        "MCH": (27, 33),
-        "MCHC": (32, 36),
-        "RDW": (11, 15),
-        "Neutrophils": (40, 70),
-        "Lymphocytes": (20, 40),
-        "Monocytes": (2, 8),
-        "Eosinophils": (1, 4),
-        "Basophils": (0, 1)
-    },
-    "CMP - Electrolytes": {
-        "Sodium": (135, 145),
-        "Potassium": (3.5, 5.0),
-        "Chloride": (98, 106),
-        "CO2": (22, 29)
-    },
-    "CMP - Renal": {
-        "BUN": (7, 20),
-        "Creatinine": (0.6, 1.3),
-        "eGFR": (60, 120)
-    },
-    "CMP - Liver": {
-        "AST": (10, 40),
-        "ALT": (7, 56),
-        "Alkaline Phosphatase": (44, 147),
-        "Total Bilirubin": (0.1, 1.2),
-        "Albumin": (3.5, 5.0),
-        "Total Protein": (6.0, 8.3)
-    },
-    "Inflammatory": {
-        "CRP": (0, 1),
-        "ESR": (0, 20),
-        "Procalcitonin": (0, 0.1),
-        "D-Dimer": (0, 0.5),
-        "LDH": (140, 280)
-    },
-    "Anticoagulation": {
-        "PT": (11, 13.5),
-        "INR": (0.8, 1.2),
-        "aPTT": (25, 35)
-    },
-    "Blood Gas": {
-        "pH": (7.35, 7.45),
-        "pCO2": (35, 45),
-        "pO2": (75, 100),
-        "HCO3": (22, 26),
-        "Lactate": (0.5, 2.2)
-    }
-}
+if case_status == "Active Cases":
+    for c in st.session_state.cases:
+        if st.session_state.cases[c]["status"] == "Active":
+            if st.sidebar.button(f"🟢 {c}"):
+                st.session_state.current_case = c
 
-# -------------------------------
-# CASE CREATION
-# -------------------------------
+if case_status == "Past Cases":
+    for c in st.session_state.cases:
+        if st.session_state.cases[c]["status"] == "Past":
+            if st.sidebar.button(f"🔵 {c}"):
+                st.session_state.current_case = c
 
-st.sidebar.title("Cases")
+if st.session_state.current_case:
+    case = st.session_state.cases[st.session_state.current_case]
+    st.subheader(f"Current Case: {st.session_state.current_case}")
 
-if st.sidebar.button("New Case"):
-    case_id = str(uuid.uuid4())
-    st.session_state.cases[case_id] = {
-        "name": f"Case {len(st.session_state.cases)+1}",
-        "status": "Active",
-        "template": DEFAULT_TEMPLATE.copy(),
-        "labs": [],
-        "chronology": ""
-    }
-    st.session_state.active_case = case_id
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "Upload",
+        "Template Builder",
+        "Labs & Trends",
+        "Duplicates / Blanks",
+        "Administration",
+        "Export"
+    ])
 
-# Display cases
-for cid, case in st.session_state.cases.items():
-    color = "green" if case["status"] == "Active" else "gray"
-    if st.sidebar.button(case["name"], key=cid):
-        st.session_state.active_case = cid
+    # --------------------------
+    # UPLOAD TAB
+    # --------------------------
+    with tab1:
+        st.subheader("Upload Records")
 
-if st.session_state.active_case is None:
-    st.title("Select or Create a Case")
-    st.stop()
+        records = st.file_uploader("Upload Medical Records (PDF, TXT, CSV)", type=["pdf","txt","csv"])
+        if records:
+            case["records"] = records
+            st.success("Records Uploaded")
 
-case = st.session_state.cases[st.session_state.active_case]
+        template_file = st.file_uploader("Upload Generic Template or Past Chronology", type=["txt","docx"])
+        if template_file:
+            content = template_file.read().decode("utf-8", errors="ignore")
+            case["template"] = content.split("\n")
+            st.success("Template Imported")
 
-# -------------------------------
-# MAIN TABS
-# -------------------------------
+    # --------------------------
+    # TEMPLATE BUILDER
+    # --------------------------
+    with tab2:
+        st.subheader("Template Sections")
 
-tabs = st.tabs([
-    "Template Builder",
-    "Upload Records",
-    "Labs & Trends",
-    "Review",
-    "Administration"
-])
-
-# -------------------------------
-# TEMPLATE BUILDER
-# -------------------------------
-
-with tabs[0]:
-    st.subheader("Template Builder")
-
-    for i, section in enumerate(case["template"]):
-        col1, col2, col3 = st.columns([6,1,1])
-        col1.write(section)
-        if col2.button("↑", key=f"up_{i}") and i > 0:
-            case["template"][i], case["template"][i-1] = case["template"][i-1], case["template"][i]
-            st.rerun()
-        if col3.button("↓", key=f"down_{i}") and i < len(case["template"])-1:
-            case["template"][i], case["template"][i+1] = case["template"][i+1], case["template"][i]
-            st.rerun()
-
-    new_section = st.text_input("Add Section")
-    if st.button("Add Section"):
-        if new_section:
+        new_section = st.text_input("Add Section")
+        if st.button("Add Section"):
             case["template"].append(new_section)
 
-# -------------------------------
-# UPLOAD RECORDS
-# -------------------------------
+        for i, sec in enumerate(case["template"]):
+            col1, col2, col3 = st.columns([6,1,1])
+            col1.write(sec)
+            if col2.button("⬆️", key=f"up{i}"):
+                if i > 0:
+                    case["template"][i], case["template"][i-1] = case["template"][i-1], case["template"][i]
+            if col3.button("⬇️", key=f"down{i}"):
+                if i < len(case["template"]) - 1:
+                    case["template"][i], case["template"][i+1] = case["template"][i+1], case["template"][i]
 
-with tabs[1]:
-    st.subheader("Upload Records")
-    uploaded = st.file_uploader("Upload PDF or CSV", type=["pdf","csv"])
-    if uploaded:
-        st.success("File uploaded (Parsing module placeholder)")
+    # --------------------------
+    # LABS SECTION
+    # --------------------------
+    with tab3:
+        st.subheader("Lab Entry")
 
-# -------------------------------
-# LABS & TRENDS
-# -------------------------------
+        lab_panels = {
+            "BMP": ["Sodium","Potassium","Chloride","CO2","BUN","Creatinine","Glucose"],
+            "Liver Panel": ["AST","ALT","Alk Phos","Total Bilirubin","Albumin"],
+            "CBC": ["WBC","Hgb","Hct","Platelets","MCV","MCH","MCHC"],
+            "Coagulation": ["PT","INR","aPTT"],
+            "Blood Gas": ["pH","pCO2","pO2","HCO3","Lactate"],
+            "Inflammatory": ["CRP","ESR","D-Dimer","LDH"],
+            "Biopsy": ["Specimen Type","Pathology Result"],
+            "Autoimmune/Tumor Markers": ["ANA","RF","CA-125","CEA"]
+        }
 
-with tabs[2]:
-    st.subheader("Labs & Trends")
+        selected_panel = st.selectbox("Select Panel", list(lab_panels.keys()))
 
-    panel_choice = st.selectbox("Select Panel", list(LAB_PANELS.keys()))
-    lab_choice = st.selectbox("Select Lab", list(LAB_PANELS[panel_choice].keys()))
+        if selected_panel not in case["labs"]:
+            case["labs"][selected_panel] = []
 
-    date = st.date_input("Date", datetime.date.today())
-    value = st.number_input("Lab Value")
+        with st.form("lab_form"):
+            date = st.date_input("Date")
+            values = {}
+            for test in lab_panels[selected_panel]:
+                values[test] = st.text_input(test)
+            custom_lab = st.text_input("Add Custom Lab (Optional)")
+            submit = st.form_submit_button("Add Entry")
 
-    if st.button("Add Lab"):
-        case["labs"].append({
-            "panel": panel_choice,
-            "lab": lab_choice,
-            "date": date,
-            "value": value
-        })
+            if submit:
+                values["Date"] = date
+                if custom_lab:
+                    values["Custom"] = custom_lab
+                case["labs"][selected_panel].append(values)
+                st.success("Lab Entry Added")
 
-    df = pd.DataFrame(case["labs"])
-    if not df.empty:
-        df = df[df["lab"] == lab_choice]
-        df = df.sort_values("date")
+        if st.button("Auto Generate Graph"):
+            if case["labs"][selected_panel]:
+                df = pd.DataFrame(case["labs"][selected_panel])
+                if "Date" in df:
+                    df = df.sort_values("Date")
+                    numeric_cols = df.select_dtypes(include=['object'])
+                    fig, ax = plt.subplots()
+                    for col in df.columns:
+                        if col != "Date":
+                            try:
+                                df[col] = pd.to_numeric(df[col])
+                                ax.plot(df["Date"], df[col])
+                            except:
+                                pass
+                    ax.tick_params(axis='x', rotation=45)
+                    st.pyplot(fig)
 
-        st.dataframe(df)
+    # --------------------------
+    # DUPLICATES TAB
+    # --------------------------
+    with tab4:
+        st.subheader("Duplicate / Blank Review")
+        if case["records"]:
+            st.write("Scanning records...")
+            st.info("Duplicate detection placeholder - logic expandable")
+        else:
+            st.warning("Upload records first.")
 
-        plt.figure()
-        plt.plot(df["date"], df["value"])
-        plt.xticks(rotation=45)
-        plt.title(lab_choice)
-        plt.tight_layout()
-        st.pyplot(plt)
+    # --------------------------
+    # ADMIN
+    # --------------------------
+    with tab5:
+        st.subheader("Administration")
+        new_status = st.selectbox("Change Case Status", ["Active","Past"])
+        if st.button("Update Status"):
+            case["status"] = new_status
+            st.success("Status Updated")
 
-# -------------------------------
-# REVIEW TAB
-# -------------------------------
+        firm_customization = st.text_area("Firm Customization Notes")
+        if st.button("Save Customization"):
+            case["notes"].append(firm_customization)
 
-with tabs[3]:
-    st.subheader("Flagged Items")
-    st.write("Reviewer checklist placeholder")
+    # --------------------------
+    # EXPORT
+    # --------------------------
+    with tab6:
+        st.subheader("Export Case File")
 
-# -------------------------------
-# ADMIN TAB
-# -------------------------------
+        export_data = {
+            "Template": case["template"],
+            "Labs": case["labs"],
+            "Notes": case["notes"]
+        }
 
-with tabs[4]:
-    st.subheader("Administration")
-    if st.button("Mark Case Complete"):
-        case["status"] = "Completed"
-    st.write("Case Status:", case["status"])
+        export_bytes = io.BytesIO()
+        export_bytes.write(str(export_data).encode())
+        st.download_button(
+            label="Download Compiled Case File",
+            data=export_bytes.getvalue(),
+            file_name=f"{st.session_state.current_case}_compiled.txt"
+        )
 
-# -------------------------------
+# --------------------------
 # DISCLAIMER
-# -------------------------------
-
+# --------------------------
 st.markdown("---")
 st.warning("""
-This tool is intended to assist in medical-legal case organization. 
-It does not replace professional medical review. 
-Errors may be present. Final review must be performed by qualified personnel.
+This software is a medical-legal organizational aid only.
+It does not replace professional medical or legal review.
+Data parsing may contain errors.
+Final review must be conducted by qualified staff.
+Use at your own discretion.
 """)
