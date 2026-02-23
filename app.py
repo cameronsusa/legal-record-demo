@@ -1,289 +1,232 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import datetime
 import uuid
-from datetime import datetime
 
-# ---------------------------------------------------
-# PAGE CONFIG + DARK THEME
-# ---------------------------------------------------
 st.set_page_config(layout="wide")
 
-st.markdown("""
-<style>
-body { background-color: #111827; color: #F3F4F6; }
-.stApp { background-color: #111827; }
-section[data-testid="stSidebar"] { background-color: #1F2937; }
-div.stButton > button {
-    background-color: #3B82F6;
-    color: white;
-    border-radius: 6px;
-}
-</style>
-""", unsafe_allow_html=True)
+# -------------------------------
+# SESSION INITIALIZATION
+# -------------------------------
 
-# ---------------------------------------------------
-# SESSION INIT
-# ---------------------------------------------------
 if "cases" not in st.session_state:
     st.session_state.cases = {}
 
-if "templates" not in st.session_state:
-    st.session_state.templates = {}
+if "active_case" not in st.session_state:
+    st.session_state.active_case = None
 
-if "selected_case" not in st.session_state:
-    st.session_state.selected_case = None
+# -------------------------------
+# DEFAULT TEMPLATE SECTIONS
+# -------------------------------
 
-if "confirm_replace" not in st.session_state:
-    st.session_state.confirm_replace = False
+DEFAULT_TEMPLATE = [
+    "Chief Complaint",
+    "History of Present Illness",
+    "Past Medical History",
+    "Medications",
+    "Allergies",
+    "Labs",
+    "Imaging",
+    "Procedures",
+    "Hospital Course",
+    "Disposition"
+]
 
-# ---------------------------------------------------
-# CASE CREATION
-# ---------------------------------------------------
-def create_case(name):
-    st.session_state.cases[name] = {
-        "status": "Active",
-        "structure": None,
-        "template_origin": None,
-        "structure_last_modified": None,
-        "records": [],
-        "labs": [],
-        "duplicates": [],
-        "flags": [],
-        "custom_rules": []
+# -------------------------------
+# LAB PANEL DEFINITIONS
+# -------------------------------
+
+LAB_PANELS = {
+    "CBC": {
+        "WBC": (4.0, 11.0),
+        "RBC": (4.2, 5.9),
+        "Hemoglobin": (12, 17.5),
+        "Hematocrit": (36, 52),
+        "Platelets": (150, 400),
+        "MCV": (80, 100),
+        "MCH": (27, 33),
+        "MCHC": (32, 36),
+        "RDW": (11, 15),
+        "Neutrophils": (40, 70),
+        "Lymphocytes": (20, 40),
+        "Monocytes": (2, 8),
+        "Eosinophils": (1, 4),
+        "Basophils": (0, 1)
+    },
+    "CMP - Electrolytes": {
+        "Sodium": (135, 145),
+        "Potassium": (3.5, 5.0),
+        "Chloride": (98, 106),
+        "CO2": (22, 29)
+    },
+    "CMP - Renal": {
+        "BUN": (7, 20),
+        "Creatinine": (0.6, 1.3),
+        "eGFR": (60, 120)
+    },
+    "CMP - Liver": {
+        "AST": (10, 40),
+        "ALT": (7, 56),
+        "Alkaline Phosphatase": (44, 147),
+        "Total Bilirubin": (0.1, 1.2),
+        "Albumin": (3.5, 5.0),
+        "Total Protein": (6.0, 8.3)
+    },
+    "Inflammatory": {
+        "CRP": (0, 1),
+        "ESR": (0, 20),
+        "Procalcitonin": (0, 0.1),
+        "D-Dimer": (0, 0.5),
+        "LDH": (140, 280)
+    },
+    "Anticoagulation": {
+        "PT": (11, 13.5),
+        "INR": (0.8, 1.2),
+        "aPTT": (25, 35)
+    },
+    "Blood Gas": {
+        "pH": (7.35, 7.45),
+        "pCO2": (35, 45),
+        "pO2": (75, 100),
+        "HCO3": (22, 26),
+        "Lactate": (0.5, 2.2)
     }
+}
 
-# ---------------------------------------------------
-# SIDEBAR CASE MANAGER
-# ---------------------------------------------------
-st.sidebar.title("CASE MANAGER")
+# -------------------------------
+# CASE CREATION
+# -------------------------------
 
-active_cases = [c for c in st.session_state.cases if st.session_state.cases[c]["status"] == "Active"]
-past_cases = [c for c in st.session_state.cases if st.session_state.cases[c]["status"] == "Past"]
+st.sidebar.title("Cases")
 
-st.sidebar.subheader("Active Cases")
-for case in active_cases:
-    if st.sidebar.button(f"🟢 {case}", key=f"active_{case}"):
-        st.session_state.selected_case = case
+if st.sidebar.button("New Case"):
+    case_id = str(uuid.uuid4())
+    st.session_state.cases[case_id] = {
+        "name": f"Case {len(st.session_state.cases)+1}",
+        "status": "Active",
+        "template": DEFAULT_TEMPLATE.copy(),
+        "labs": [],
+        "chronology": ""
+    }
+    st.session_state.active_case = case_id
 
-st.sidebar.subheader("Past Cases")
-for case in past_cases:
-    if st.sidebar.button(f"🔵 {case}", key=f"past_{case}"):
-        st.session_state.selected_case = case
+# Display cases
+for cid, case in st.session_state.cases.items():
+    color = "green" if case["status"] == "Active" else "gray"
+    if st.sidebar.button(case["name"], key=cid):
+        st.session_state.active_case = cid
 
-new_case = st.sidebar.text_input("New Case Name")
-if st.sidebar.button("Create Case"):
-    if new_case and new_case not in st.session_state.cases:
-        create_case(new_case)
-        st.session_state.selected_case = new_case
-
-if not st.session_state.selected_case:
-    st.title("Create or Select a Case to Begin")
+if st.session_state.active_case is None:
+    st.title("Select or Create a Case")
     st.stop()
 
-case_data = st.session_state.cases[st.session_state.selected_case]
+case = st.session_state.cases[st.session_state.active_case]
 
-# ---------------------------------------------------
-# NAVIGATION
-# ---------------------------------------------------
-page = st.sidebar.radio("Navigate", [
-    "Dashboard",
+# -------------------------------
+# MAIN TABS
+# -------------------------------
+
+tabs = st.tabs([
+    "Template Builder",
     "Upload Records",
-    "Templates",
     "Labs & Trends",
-    "Duplicates",
-    "Review & Flags",
-    "Tools & Customization"
+    "Review",
+    "Administration"
 ])
 
-# ===================================================
-# DASHBOARD
-# ===================================================
-if page == "Dashboard":
+# -------------------------------
+# TEMPLATE BUILDER
+# -------------------------------
 
-    st.title(f"Case: {st.session_state.selected_case}")
+with tabs[0]:
+    st.subheader("Template Builder")
 
-    if case_data["status"] == "Active":
-        if st.button("Move to Past"):
-            case_data["status"] = "Past"
-    else:
-        if st.button("Move to Active"):
-            case_data["status"] = "Active"
+    for i, section in enumerate(case["template"]):
+        col1, col2, col3 = st.columns([6,1,1])
+        col1.write(section)
+        if col2.button("↑", key=f"up_{i}") and i > 0:
+            case["template"][i], case["template"][i-1] = case["template"][i-1], case["template"][i]
+            st.rerun()
+        if col3.button("↓", key=f"down_{i}") and i < len(case["template"])-1:
+            case["template"][i], case["template"][i+1] = case["template"][i+1], case["template"][i]
+            st.rerun()
 
-    st.markdown("---")
-    st.subheader("Case Structure")
+    new_section = st.text_input("Add Section")
+    if st.button("Add Section"):
+        if new_section:
+            case["template"].append(new_section)
 
-    if case_data["structure"]:
-
-        for i, section in enumerate(case_data["structure"]):
-
-            col1, col2, col3, col4 = st.columns([6,1,1,1])
-            col1.write(f"{i+1}. {section}")
-
-            if col2.button("↑", key=f"up_{i}"):
-                if i > 0:
-                    case_data["structure"][i], case_data["structure"][i-1] = \
-                        case_data["structure"][i-1], case_data["structure"][i]
-                    st.experimental_rerun()
-
-            if col3.button("↓", key=f"down_{i}"):
-                if i < len(case_data["structure"]) - 1:
-                    case_data["structure"][i], case_data["structure"][i+1] = \
-                        case_data["structure"][i+1], case_data["structure"][i]
-                    st.experimental_rerun()
-
-            if col4.button("X", key=f"del_{i}"):
-                case_data["structure"].pop(i)
-                st.experimental_rerun()
-
-        new_section = st.text_input("Add Section")
-        if st.button("Add Section"):
-            if new_section.strip():
-                case_data["structure"].append(new_section.strip())
-                case_data["structure_last_modified"] = datetime.now()
-
-    else:
-        st.info("No structure applied yet.")
-
-    st.markdown("---")
-    st.warning("This tool assists medical-legal organization and does not replace professional review.")
-
-# ===================================================
+# -------------------------------
 # UPLOAD RECORDS
-# ===================================================
-elif page == "Upload Records":
+# -------------------------------
 
-    st.title("Upload Records")
-
-    uploaded = st.file_uploader("Upload PDF or Document")
-
+with tabs[1]:
+    st.subheader("Upload Records")
+    uploaded = st.file_uploader("Upload PDF or CSV", type=["pdf","csv"])
     if uploaded:
-        case_data["records"].append(uploaded.name)
-        st.success(f"{uploaded.name} added.")
+        st.success("File uploaded (Parsing module placeholder)")
 
-    st.write("Uploaded Records:", case_data["records"])
+# -------------------------------
+# LABS & TRENDS
+# -------------------------------
 
-# ===================================================
-# TEMPLATES
-# ===================================================
-elif page == "Templates":
+with tabs[2]:
+    st.subheader("Labs & Trends")
 
-    st.title("Structural Templates")
+    panel_choice = st.selectbox("Select Panel", list(LAB_PANELS.keys()))
+    lab_choice = st.selectbox("Select Lab", list(LAB_PANELS[panel_choice].keys()))
 
-    st.subheader("Paste Simple Outline")
-    simple_text = st.text_area("One section per line")
+    date = st.date_input("Date", datetime.date.today())
+    value = st.number_input("Lab Value")
 
-    if st.button("Save Simple Structure"):
-        if simple_text.strip():
-            sections = [line.strip() for line in simple_text.split("\n") if line.strip()]
-            template_name = f"Template_{uuid.uuid4().hex[:6]}"
-            st.session_state.templates[template_name] = sections
-            st.success(f"Saved as {template_name}")
+    if st.button("Add Lab"):
+        case["labs"].append({
+            "panel": panel_choice,
+            "lab": lab_choice,
+            "date": date,
+            "value": value
+        })
 
-    st.markdown("---")
+    df = pd.DataFrame(case["labs"])
+    if not df.empty:
+        df = df[df["lab"] == lab_choice]
+        df = df.sort_values("date")
 
-    st.subheader("Upload Past Chronology")
-    uploaded = st.file_uploader("Upload Document")
+        st.dataframe(df)
 
-    if uploaded:
-        simulated_sections = [
-            "Emergency Department",
-            "ICU Admission",
-            "Surgical Course",
-            "Complications",
-            "Discharge Summary",
-            "Labs",
-            "Duplicate Appendix"
-        ]
-        template_name = f"Chronology_{uuid.uuid4().hex[:6]}"
-        st.session_state.templates[template_name] = simulated_sections
-        st.success(f"Structure saved as {template_name}")
+        plt.figure()
+        plt.plot(df["date"], df["value"])
+        plt.xticks(rotation=45)
+        plt.title(lab_choice)
+        plt.tight_layout()
+        st.pyplot(plt)
 
-    st.markdown("---")
+# -------------------------------
+# REVIEW TAB
+# -------------------------------
 
-    if st.session_state.templates:
-        template_choice = st.selectbox("Select Template", list(st.session_state.templates.keys()))
+with tabs[3]:
+    st.subheader("Flagged Items")
+    st.write("Reviewer checklist placeholder")
 
-        if st.button("Apply Template to This Case"):
+# -------------------------------
+# ADMIN TAB
+# -------------------------------
 
-            if case_data["structure"] and not st.session_state.confirm_replace:
-                st.session_state.confirm_replace = True
-                st.warning("Structure exists. Click again to confirm replacement.")
-            else:
-                case_data["structure"] = st.session_state.templates[template_choice].copy()
-                case_data["template_origin"] = template_choice
-                case_data["structure_last_modified"] = datetime.now()
-                st.session_state.confirm_replace = False
-                st.success("Template applied.")
+with tabs[4]:
+    st.subheader("Administration")
+    if st.button("Mark Case Complete"):
+        case["status"] = "Completed"
+    st.write("Case Status:", case["status"])
 
-# ===================================================
-# LABS
-# ===================================================
-elif page == "Labs & Trends":
+# -------------------------------
+# DISCLAIMER
+# -------------------------------
 
-    st.title("Lab Trends")
-
-    labs = {
-        "CBC": ["WBC","RBC","HGB","HCT","Platelets"],
-        "CMP": ["Sodium","Potassium","Creatinine","Glucose"],
-        "Inflammatory": ["CRP","ESR"]
-    }
-
-    category = st.selectbox("Category", list(labs.keys()))
-    selected_lab = st.selectbox("Lab", labs[category])
-
-    dates = pd.date_range(start="2023-01-01", periods=12)
-    values = [5,7,6,12,8,9,11,10,13,7,6,8]
-
-    df = pd.DataFrame({"Date": dates, "Value": values})
-
-    fig, ax = plt.subplots(figsize=(14,6))
-    ax.plot(df["Date"], df["Value"], marker="o")
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig)
-
-# ===================================================
-# DUPLICATES
-# ===================================================
-elif page == "Duplicates":
-
-    st.title("Duplicate Detection")
-
-    if st.button("Simulate Duplicate"):
-        case_data["duplicates"].append(f"BATES_{uuid.uuid4().hex[:4]}")
-        st.success("Duplicate added.")
-
-    st.write(case_data["duplicates"])
-
-# ===================================================
-# REVIEW
-# ===================================================
-elif page == "Review & Flags":
-
-    st.title("Flags")
-
-    if st.button("Add Test Flag"):
-        case_data["flags"].append({"item":"Lab Value","status":"Pending"})
-
-    for i, flag in enumerate(case_data["flags"]):
-        status = st.selectbox(
-            "Status",
-            ["Pending","Completed","Dismissed"],
-            key=f"flag_{i}"
-        )
-        case_data["flags"][i]["status"] = status
-
-# ===================================================
-# TOOLS
-# ===================================================
-elif page == "Tools & Customization":
-
-    st.title("Customization")
-
-    custom_rule = st.text_area("Add Firm Rule")
-
-    if st.button("Save Rule"):
-        case_data["custom_rules"].append(custom_rule)
-
-    st.write("Saved Rules:", case_data["custom_rules"])
+st.markdown("---")
+st.warning("""
+This tool is intended to assist in medical-legal case organization. 
+It does not replace professional medical review. 
+Errors may be present. Final review must be performed by qualified personnel.
+""")
