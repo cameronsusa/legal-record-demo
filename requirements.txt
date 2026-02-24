@@ -1,5 +1,5 @@
 streamlit
 pandas
-matplotlib
-reportlab
 PyPDF2
+reportlab
+matplotlib
