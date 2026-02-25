@@ -97,3 +97,43 @@ def insert_page(case_id, document_id, page_number, file_path, page_hash):
 
     conn.commit()
     conn.close()
+def get_cases(status="active"):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, mode FROM cases WHERE status=?", (status,))
+    cases = cursor.fetchall()
+    conn.close()
+    return cases
+
+
+def toggle_case_status(case_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT status FROM cases WHERE id=?", (case_id,))
+    current = cursor.fetchone()[0]
+    new_status = "archived" if current == "active" else "active"
+
+    cursor.execute("UPDATE cases SET status=? WHERE id=?", (new_status, case_id))
+    conn.commit()
+    conn.close()
+
+
+def get_pages_by_category(case_id, category):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, page_number, file_path FROM pages WHERE case_id=? AND category=?",
+        (case_id, category),
+    )
+    results = cursor.fetchall()
+    conn.close()
+    return results
+
+
+def update_page_category(page_id, new_category):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE pages SET category=?, manual_override=1 WHERE id=?", (new_category, page_id))
+    conn.commit()
+    conn.close()
