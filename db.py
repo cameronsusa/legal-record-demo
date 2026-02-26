@@ -17,7 +17,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Users table
+    # USERS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +26,7 @@ def init_db():
         )
     """)
 
-    # Cases table
+    # CASES
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +38,7 @@ def init_db():
         )
     """)
 
-    # Documents table
+    # DOCUMENTS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +48,7 @@ def init_db():
         )
     """)
 
-    # Pages table
+    # PAGES
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,11 +62,11 @@ def init_db():
         )
     """)
 
-    # Add display_order if missing
+    # Add display_order safely
     if not column_exists(cursor, "pages", "display_order"):
         cursor.execute("ALTER TABLE pages ADD COLUMN display_order INTEGER DEFAULT 0")
 
-    # Firm settings table
+    # FIRM SETTINGS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS firm_settings (
             id INTEGER PRIMARY KEY,
@@ -75,7 +75,6 @@ def init_db():
         )
     """)
 
-    # Insert default firm settings if empty
     cursor.execute("SELECT COUNT(*) FROM firm_settings")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
@@ -83,7 +82,7 @@ def init_db():
             VALUES (1, 1)
         """)
 
-    # Case settings table
+    # CASE SETTINGS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS case_settings (
             case_id INTEGER PRIMARY KEY,
@@ -94,3 +93,101 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+# ------------------ CASE FUNCTIONS ------------------ #
+
+def create_case(name, mode):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO cases (name, mode, status) VALUES (?, ?, 'active')",
+        (name, mode),
+    )
+    case_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return case_id
+
+
+def get_cases(status):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM cases WHERE status=?", (status,))
+    cases = cursor.fetchall()
+    conn.close()
+    return cases
+
+
+def toggle_case_status(case_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT status FROM cases WHERE id=?", (case_id,))
+    current = cursor.fetchone()[0]
+    new_status = "archived" if current == "active" else "active"
+    cursor.execute("UPDATE cases SET status=? WHERE id=?", (new_status, case_id))
+    conn.commit()
+    conn.close()
+
+
+# ------------------ DOCUMENT FUNCTIONS ------------------ #
+
+def insert_document(case_id, filename):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO documents (case_id, filename) VALUES (?, ?)",
+        (case_id, filename),
+    )
+    doc_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return doc_id
+
+
+def insert_page(case_id, document_id, page_number, file_path, hash_value):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT INTO pages (case_id, document_id, page_number, file_path, hash, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+        (case_id, document_id, page_number, file_path, hash_value, page_number),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_pages_by_category(case_id, category):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, page_number, document_id FROM pages WHERE case_id=? AND category=? ORDER BY display_order ASC",
+        (case_id, category),
+    )
+    pages = cursor.fetchall()
+    conn.close()
+    return pages
+
+
+def update_page_category(page_id, new_category):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE pages SET category=?, manual_override=1 WHERE id=?",
+        (new_category, page_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_pages_by_document(case_id, document_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM pages WHERE case_id=? AND document_id=?",
+        (case_id, document_id),
+    )
+    pages = cursor.fetchall()
+    conn.close()
+    return [p[0] for p in pages]
