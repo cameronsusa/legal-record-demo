@@ -1,4 +1,7 @@
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
 from db import (
     init_db,
     create_case,
@@ -9,6 +12,7 @@ from db import (
     get_pages_by_category,
     update_page_category,
 )
+
 from storage import save_master_pdf, split_pdf_into_pages
 
 st.set_page_config(page_title="Litigation Record Engine", layout="wide")
@@ -86,6 +90,8 @@ elif st.session_state.view == "workspace":
         "Facility Chart",
         "Administration",
         "Duplicates",
+        "Template / Chronology",
+        "Labs & Trends",
         "Export"
     ])
 
@@ -144,7 +150,48 @@ elif st.session_state.view == "workspace":
         for page in pages:
             st.write(f"Page {page[1]} (Doc {page[2]})")
 
-    # -------- Export Tab -------- #
+    # -------- Template Tab -------- #
     with tabs[4]:
+        st.subheader("Upload Firm Template or Past Chronology")
+        template_file = st.file_uploader("Upload Template PDF", type=["pdf"])
+
+        if template_file:
+            st.success("Template uploaded successfully.")
+            st.info("Sorting logic will apply in next development phase.")
+
+    # -------- Labs & Trends Tab -------- #
+    with tabs[5]:
+        st.subheader("Manual Lab Entry & Trend Graph")
+
+        if "lab_data" not in st.session_state:
+            st.session_state.lab_data = pd.DataFrame(columns=["Date", "Value"])
+
+        date = st.date_input("Lab Date")
+        value = st.number_input("Lab Value")
+
+        if st.button("Add Lab Entry"):
+            new_row = pd.DataFrame([[date, value]], columns=["Date", "Value"])
+            st.session_state.lab_data = pd.concat(
+                [st.session_state.lab_data, new_row],
+                ignore_index=True
+            )
+
+        if not st.session_state.lab_data.empty:
+            st.write("Lab Entries:")
+            st.dataframe(st.session_state.lab_data)
+
+            fig, ax = plt.subplots()
+            ax.plot(
+                pd.to_datetime(st.session_state.lab_data["Date"]),
+                st.session_state.lab_data["Value"],
+            )
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Value")
+            ax.set_title("Lab Trend")
+
+            st.pyplot(fig)
+
+    # -------- Export Tab -------- #
+    with tabs[6]:
         st.subheader("Export")
-        st.info("Export engine coming next.")
+        st.info("Export builder reconnecting in next phase.")
