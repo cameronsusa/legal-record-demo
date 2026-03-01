@@ -1,5 +1,9 @@
 streamlit
 pandas
-PyPDF2
-reportlab
 matplotlib
+reportlab
+pytesseract
+pdf2image
+pillow
+PyPDF2
+numpy
