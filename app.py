@@ -17,7 +17,10 @@ from storage import save_master_pdf, split_pdf_into_pages
 
 from processing import detect_duplicate
 
-st.set_page_config(page_title="Litigation Record Engine", layout="wide")
+st.set_page_config(
+    page_title="Litigation Record Engine",
+    layout="wide"
+)
 
 init_db()
 
@@ -28,41 +31,60 @@ if "selected_case" not in st.session_state:
     st.session_state.selected_case = None
 
 
-# ---------------- DASHBOARD ---------------- #
+# ================= DASHBOARD ================= #
 if st.session_state.view == "dashboard":
 
     st.title("Litigation Record Engine")
 
     col1, col2 = st.columns(2)
 
+    # -------- Active Cases -------- #
     with col1:
+
         st.subheader("Active Cases")
 
         active_cases = get_cases("active")
 
+        if not active_cases:
+            st.info("No active cases.")
+
         for case in active_cases:
 
-            if st.button(f"Open: {case[1]}", key=f"open_{case[0]}"):
+            if st.button(
+                f"Open: {case[1]}",
+                key=f"active_{case[0]}"
+            ):
 
                 st.session_state.selected_case = case[0]
                 st.session_state.view = "workspace"
+
                 st.rerun()
 
+    # -------- Archived Cases -------- #
     with col2:
+
         st.subheader("Past Cases")
 
         archived_cases = get_cases("archived")
 
+        if not archived_cases:
+            st.info("No past cases.")
+
         for case in archived_cases:
 
-            if st.button(f"Open: {case[1]}", key=f"arch_{case[0]}"):
+            if st.button(
+                f"Open: {case[1]}",
+                key=f"archive_{case[0]}"
+            ):
 
                 st.session_state.selected_case = case[0]
                 st.session_state.view = "workspace"
+
                 st.rerun()
 
     st.divider()
 
+    # -------- Create New Case -------- #
     st.subheader("Create New Case")
 
     new_case_name = st.text_input("Case Name")
@@ -83,73 +105,77 @@ if st.session_state.view == "dashboard":
             st.rerun()
 
         else:
-            st.warning("Enter case name.")
+
+            st.warning("Enter a case name.")
 
 
-# ---------------- WORKSPACE ---------------- #
+# ================= WORKSPACE ================= #
 elif st.session_state.view == "workspace":
 
     case_id = st.session_state.selected_case
 
     st.title(f"Case Workspace – ID {case_id}")
 
-    col1, col2 = st.columns([1, 1])
+    top1, top2 = st.columns([1, 1])
 
-    with col1:
+    with top1:
 
         if st.button("Back to Dashboard"):
 
             st.session_state.view = "dashboard"
             st.session_state.selected_case = None
+
             st.rerun()
 
-    with col2:
+    with top2:
 
         if st.button("Toggle Active / Past"):
 
             toggle_case_status(case_id)
 
-            st.success("Status updated.")
+            st.success("Case status updated.")
 
     tabs = st.tabs([
         "Upload Records",
-        "Facility Chart",
-        "Administration",
+        "Chronology Workspace",
+        "Administrative",
         "Duplicates",
-        "Template / Chronology",
+        "Templates",
         "Labs & Trends",
         "Export"
     ])
 
-    # ---------------- Upload Tab ---------------- #
+    # ================= UPLOAD TAB ================= #
     with tabs[0]:
 
-        st.subheader("Upload Records")
+        st.subheader("Upload Medical Records")
 
         additional_files = st.file_uploader(
-            "Upload PDFs",
+            "Upload PDF Files",
             type=["pdf"],
             accept_multiple_files=True
         )
 
         st.info(
-            "Uploaded records will automatically process, "
-            "split into pages, detect duplicates, "
-            "and route pages into the correct tabs."
+            "Uploads will automatically split pages, "
+            "detect duplicates, and route records."
         )
 
-        if st.button("Process Upload"):
+        if st.button("Process Uploads"):
 
             if additional_files:
 
                 existing_hashes = set()
 
                 total_pages = 0
-                duplicate_count = 0
+                duplicate_pages = 0
 
                 for file in additional_files:
 
-                    master_path = save_master_pdf(case_id, file)
+                    master_path = save_master_pdf(
+                        case_id,
+                        file
+                    )
 
                     page_data = split_pdf_into_pages(
                         case_id,
@@ -173,11 +199,11 @@ elif st.session_state.view == "workspace":
                         if is_duplicate:
 
                             category = "duplicate"
-                            duplicate_count += 1
+                            duplicate_pages += 1
 
                         else:
 
-                            category = "facility"
+                            category = "chronology"
 
                             existing_hashes.add(
                                 page["hash"]
@@ -193,79 +219,81 @@ elif st.session_state.view == "workspace":
                         )
 
                 st.success(
-                    f"Processing Complete | "
                     f"{total_pages} pages processed | "
-                    f"{duplicate_count} duplicates detected."
+                    f"{duplicate_pages} duplicates detected."
                 )
 
                 st.rerun()
 
             else:
 
-                st.warning("Upload at least one PDF.")
+                st.warning("Please upload at least one PDF.")
 
-    # ---------------- Facility Tab ---------------- #
+    # ================= CHRONOLOGY WORKSPACE ================= #
     with tabs[1]:
 
-        st.subheader("Facility Records")
+        st.subheader("Chronology Workspace")
 
         st.caption(
-            "Primary clinical and treatment records."
+            "Primary litigation chronology queue."
         )
 
         pages = get_pages_by_category(
             case_id,
-            "facility"
+            "chronology"
         )
 
         if not pages:
 
-            st.info("No facility records detected.")
+            st.info(
+                "No chronology pages available."
+            )
 
         for page in pages:
 
-            colA, colB = st.columns([4, 1])
+            col1, col2 = st.columns([5, 2])
 
-            colA.write(
-                f"Page {page[1]} (Doc {page[2]})"
-            )
+            with col1:
 
-            action = colB.selectbox(
-                "Action",
-                [
-                    "Keep",
-                    "Move to Admin",
-                    "Move to Duplicates"
-                ],
-                key=f"facility_action_{page[0]}"
-            )
-
-            if action == "Move to Admin":
-
-                update_page_category(
-                    page[0],
-                    "admin"
+                st.write(
+                    f"Page {page[1]} | "
+                    f"Document {page[2]}"
                 )
 
-                st.rerun()
+            with col2:
 
-            elif action == "Move to Duplicates":
-
-                update_page_category(
-                    page[0],
-                    "duplicate"
+                action = st.selectbox(
+                    "Action",
+                    [
+                        "Keep",
+                        "Move to Duplicates",
+                        "Move to Administrative"
+                    ],
+                    key=f"chrono_{page[0]}"
                 )
 
-                st.rerun()
+                if action == "Move to Duplicates":
 
-    # ---------------- Admin Tab ---------------- #
+                    update_page_category(
+                        page[0],
+                        "duplicate"
+                    )
+
+                    st.rerun()
+
+                elif action == "Move to Administrative":
+
+                    update_page_category(
+                        page[0],
+                        "admin"
+                    )
+
+                    st.rerun()
+
+    # ================= ADMIN TAB ================= #
     with tabs[2]:
 
         st.subheader("Administrative Records")
-
-        st.caption(
-            "Billing, authorization, and non-clinical records."
-        )
 
         pages = get_pages_by_category(
             case_id,
@@ -274,51 +302,56 @@ elif st.session_state.view == "workspace":
 
         if not pages:
 
-            st.info("No administrative records.")
+            st.info("No admin records.")
 
         for page in pages:
 
-            colA, colB = st.columns([4, 1])
+            col1, col2 = st.columns([5, 2])
 
-            colA.write(
-                f"Page {page[1]} (Doc {page[2]})"
-            )
+            with col1:
 
-            action = colB.selectbox(
-                "Action",
-                [
-                    "Keep",
-                    "Move to Facility",
-                    "Move to Duplicates"
-                ],
-                key=f"admin_action_{page[0]}"
-            )
-
-            if action == "Move to Facility":
-
-                update_page_category(
-                    page[0],
-                    "facility"
+                st.write(
+                    f"Page {page[1]} | "
+                    f"Document {page[2]}"
                 )
 
-                st.rerun()
+            with col2:
 
-            elif action == "Move to Duplicates":
-
-                update_page_category(
-                    page[0],
-                    "duplicate"
+                action = st.selectbox(
+                    "Action",
+                    [
+                        "Keep",
+                        "Move to Chronology",
+                        "Move to Duplicates"
+                    ],
+                    key=f"admin_{page[0]}"
                 )
 
-                st.rerun()
+                if action == "Move to Chronology":
 
-    # ---------------- Duplicate Tab ---------------- #
+                    update_page_category(
+                        page[0],
+                        "chronology"
+                    )
+
+                    st.rerun()
+
+                elif action == "Move to Duplicates":
+
+                    update_page_category(
+                        page[0],
+                        "duplicate"
+                    )
+
+                    st.rerun()
+
+    # ================= DUPLICATES TAB ================= #
     with tabs[3]:
 
         st.subheader("Duplicate Pages")
 
         st.caption(
-            "Duplicates are automatically detected during processing."
+            "Automatically detected duplicate pages."
         )
 
         pages = get_pages_by_category(
@@ -328,53 +361,58 @@ elif st.session_state.view == "workspace":
 
         if not pages:
 
-            st.info("No duplicates detected.")
+            st.info("No duplicate pages.")
 
         for page in pages:
 
-            colA, colB = st.columns([4, 1])
+            col1, col2 = st.columns([5, 2])
 
-            colA.write(
-                f"Page {page[1]} (Doc {page[2]})"
-            )
+            with col1:
 
-            action = colB.selectbox(
-                "Action",
-                [
-                    "Keep in Duplicates",
-                    "Move to Facility",
-                    "Move to Admin"
-                ],
-                key=f"dup_action_{page[0]}"
-            )
-
-            if action == "Move to Facility":
-
-                update_page_category(
-                    page[0],
-                    "facility"
+                st.write(
+                    f"Page {page[1]} | "
+                    f"Document {page[2]}"
                 )
 
-                st.rerun()
+            with col2:
 
-            elif action == "Move to Admin":
-
-                update_page_category(
-                    page[0],
-                    "admin"
+                action = st.selectbox(
+                    "Action",
+                    [
+                        "Keep Duplicate",
+                        "Move to Chronology",
+                        "Move to Administrative"
+                    ],
+                    key=f"dup_{page[0]}"
                 )
 
-                st.rerun()
+                if action == "Move to Chronology":
 
-    # ---------------- Template Tab ---------------- #
+                    update_page_category(
+                        page[0],
+                        "chronology"
+                    )
+
+                    st.rerun()
+
+                elif action == "Move to Administrative":
+
+                    update_page_category(
+                        page[0],
+                        "admin"
+                    )
+
+                    st.rerun()
+
+    # ================= TEMPLATE TAB ================= #
     with tabs[4]:
 
         st.subheader(
-            "Upload Firm Template or Past Chronology"
+            "Template / Prior Chronology Upload"
         )
 
         template_file = st.file_uploader(
-            "Upload Template PDF",
+            "Upload Firm Template",
             type=["pdf"]
         )
 
@@ -385,16 +423,15 @@ elif st.session_state.view == "workspace":
             )
 
             st.info(
-                "Chronology automation and "
-                "template-driven sorting "
-                "will integrate next."
+                "Template-driven chronology "
+                "automation coming next."
             )
 
-    # ---------------- Labs & Trends ---------------- #
+    # ================= LABS TAB ================= #
     with tabs[5]:
 
         st.subheader(
-            "Manual Lab Entry & Trend Graph"
+            "Labs & Trend Graphs"
         )
 
         if "lab_data" not in st.session_state:
@@ -407,7 +444,7 @@ elif st.session_state.view == "workspace":
 
         value = st.number_input("Lab Value")
 
-        if st.button("Add Lab Entry"):
+        if st.button("Add Lab Value"):
 
             new_row = pd.DataFrame(
                 [[date, value]],
@@ -424,8 +461,6 @@ elif st.session_state.view == "workspace":
 
         if not st.session_state.lab_data.empty:
 
-            st.write("Lab Entries:")
-
             st.dataframe(
                 st.session_state.lab_data
             )
@@ -436,20 +471,31 @@ elif st.session_state.view == "workspace":
                 pd.to_datetime(
                     st.session_state.lab_data["Date"]
                 ),
-                st.session_state.lab_data["Value"],
+                st.session_state.lab_data["Value"]
             )
 
-            ax.set_xlabel("Date")
-            ax.set_ylabel("Value")
             ax.set_title("Lab Trend")
+
+            ax.set_xlabel("Date")
+
+            ax.set_ylabel("Value")
 
             st.pyplot(fig)
 
-    # ---------------- Export ---------------- #
+    # ================= EXPORT TAB ================= #
     with tabs[6]:
 
-        st.subheader("Export")
+        st.subheader("Export Builder")
+
+        st.warning(
+            "PDF chronology export engine "
+            "is the next development phase."
+        )
 
         st.info(
-            "Export builder reconnecting in next phase."
+            "Future exports will include:\n"
+            "- Final chronology PDF\n"
+            "- Duplicate appendix\n"
+            "- Bates preservation\n"
+            "- Case summaries"
         )
