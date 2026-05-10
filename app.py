@@ -17,13 +17,19 @@ from storage import save_master_pdf, split_pdf_into_pages
 
 from processing import detect_duplicate
 
+
+# ================= PAGE CONFIG ================= #
 st.set_page_config(
     page_title="Litigation Record Engine",
     layout="wide"
 )
 
+st.title("UPDATED VERSION LOADED")
+
 init_db()
 
+
+# ================= SESSION STATE ================= #
 if "view" not in st.session_state:
     st.session_state.view = "dashboard"
 
@@ -34,11 +40,11 @@ if "selected_case" not in st.session_state:
 # ================= DASHBOARD ================= #
 if st.session_state.view == "dashboard":
 
-    st.title("Litigation Record Engine")
+    st.header("Case Dashboard")
 
     col1, col2 = st.columns(2)
 
-    # -------- Active Cases -------- #
+    # -------- ACTIVE CASES -------- #
     with col1:
 
         st.subheader("Active Cases")
@@ -60,7 +66,7 @@ if st.session_state.view == "dashboard":
 
                 st.rerun()
 
-    # -------- Archived Cases -------- #
+    # -------- ARCHIVED CASES -------- #
     with col2:
 
         st.subheader("Past Cases")
@@ -74,7 +80,7 @@ if st.session_state.view == "dashboard":
 
             if st.button(
                 f"Open: {case[1]}",
-                key=f"archive_{case[0]}"
+                key=f"archived_{case[0]}"
             ):
 
                 st.session_state.selected_case = case[0]
@@ -84,7 +90,7 @@ if st.session_state.view == "dashboard":
 
     st.divider()
 
-    # -------- Create New Case -------- #
+    # -------- CREATE NEW CASE -------- #
     st.subheader("Create New Case")
 
     new_case_name = st.text_input("Case Name")
@@ -98,7 +104,10 @@ if st.session_state.view == "dashboard":
 
         if new_case_name:
 
-            create_case(new_case_name, mode)
+            create_case(
+                new_case_name,
+                mode
+            )
 
             st.success("Case created.")
 
@@ -114,9 +123,9 @@ elif st.session_state.view == "workspace":
 
     case_id = st.session_state.selected_case
 
-    st.title(f"Case Workspace – ID {case_id}")
+    st.header(f"Case Workspace – ID {case_id}")
 
-    top1, top2 = st.columns([1, 1])
+    top1, top2 = st.columns(2)
 
     with top1:
 
@@ -135,6 +144,9 @@ elif st.session_state.view == "workspace":
 
             st.success("Case status updated.")
 
+            st.rerun()
+
+    # ================= TABS ================= #
     tabs = st.tabs([
         "Upload Records",
         "Chronology Workspace",
@@ -150,27 +162,27 @@ elif st.session_state.view == "workspace":
 
         st.subheader("Upload Medical Records")
 
-        additional_files = st.file_uploader(
+        uploaded_files = st.file_uploader(
             "Upload PDF Files",
             type=["pdf"],
             accept_multiple_files=True
         )
 
         st.info(
-            "Uploads will automatically split pages, "
-            "detect duplicates, and route records."
+            "Files will automatically process, "
+            "detect duplicates, and route pages."
         )
 
         if st.button("Process Uploads"):
 
-            if additional_files:
+            if uploaded_files:
 
                 existing_hashes = set()
 
                 total_pages = 0
                 duplicate_pages = 0
 
-                for file in additional_files:
+                for file in uploaded_files:
 
                     master_path = save_master_pdf(
                         case_id,
@@ -227,16 +239,14 @@ elif st.session_state.view == "workspace":
 
             else:
 
-                st.warning("Please upload at least one PDF.")
+                st.warning(
+                    "Please upload at least one PDF."
+                )
 
-    # ================= CHRONOLOGY WORKSPACE ================= #
+    # ================= CHRONOLOGY TAB ================= #
     with tabs[1]:
 
         st.subheader("Chronology Workspace")
-
-        st.caption(
-            "Primary litigation chronology queue."
-        )
 
         pages = get_pages_by_category(
             case_id,
@@ -245,9 +255,7 @@ elif st.session_state.view == "workspace":
 
         if not pages:
 
-            st.info(
-                "No chronology pages available."
-            )
+            st.info("No chronology pages.")
 
         for page in pages:
 
@@ -350,10 +358,6 @@ elif st.session_state.view == "workspace":
 
         st.subheader("Duplicate Pages")
 
-        st.caption(
-            "Automatically detected duplicate pages."
-        )
-
         pages = get_pages_by_category(
             case_id,
             "duplicate"
@@ -361,7 +365,7 @@ elif st.session_state.view == "workspace":
 
         if not pages:
 
-            st.info("No duplicate pages.")
+            st.info("No duplicates detected.")
 
         for page in pages:
 
@@ -407,32 +411,23 @@ elif st.session_state.view == "workspace":
     # ================= TEMPLATE TAB ================= #
     with tabs[4]:
 
-        st.subheader(
-            "Template / Prior Chronology Upload"
-        )
+        st.subheader("Templates")
 
         template_file = st.file_uploader(
-            "Upload Firm Template",
+            "Upload Template PDF",
             type=["pdf"]
         )
 
         if template_file:
 
             st.success(
-                "Template uploaded successfully."
-            )
-
-            st.info(
-                "Template-driven chronology "
-                "automation coming next."
+                "Template uploaded."
             )
 
     # ================= LABS TAB ================= #
     with tabs[5]:
 
-        st.subheader(
-            "Labs & Trend Graphs"
-        )
+        st.subheader("Labs & Trends")
 
         if "lab_data" not in st.session_state:
 
@@ -444,7 +439,7 @@ elif st.session_state.view == "workspace":
 
         value = st.number_input("Lab Value")
 
-        if st.button("Add Lab Value"):
+        if st.button("Add Lab Entry"):
 
             new_row = pd.DataFrame(
                 [[date, value]],
@@ -488,13 +483,13 @@ elif st.session_state.view == "workspace":
         st.subheader("Export Builder")
 
         st.warning(
-            "PDF chronology export engine "
-            "is the next development phase."
+            "Chronology PDF export "
+            "coming next."
         )
 
         st.info(
-            "Future exports will include:\n"
-            "- Final chronology PDF\n"
+            "Planned exports:\n"
+            "- Chronology PDF\n"
             "- Duplicate appendix\n"
             "- Bates preservation\n"
             "- Case summaries"
